@@ -1,0 +1,13 @@
+,(ONLY MODIFY THIS COLUMN),,,,,,,
+LAB Group:,,,,,EXAMPLE:,LAB Group:,LA0X_0X,
+Student A Comp ID:,,,,,,Student A Comp ID:,ksl24,
+Student B Comp ID:,,,,,,Student B Comp ID:,dst5,
+Tiling - implementation (20 pts),,,,,,Tiling - implementation (20 pts),A,"`-> ksl24 was responsible for this, because ksl24 is Student A"
+Tiling - try 5 configs (20 pts),,,,,,Tiling - try 5 configs (20 pts),A,
+Vectorization - implementation (20 pts),,,,,,Vectorization - implementation (20 pts),A,
+Vectorization - document results (5 pts),,,,,,Vectorization - document results (5 pts),A,
+Parallelization - implementation (20 pts),,,,,,Parallelization - implementation (20 pts),B,"`-> dst5 was responsible for this, because dst5 is Student B"
+Parallelization - try different threads and plot histogram (20 pts),,,,,,Parallelization - try different threads and plot histogram (20 pts),B,
+Parallelization - Readjust tile-sizes (10 pts),,,,,,Parallelization - Readjust tile-sizes (10 pts),B,
+Parallelization - document step-by-step speedups (5 pts),,,,,,Parallelization - document step-by-step speedups (5 pts),B,
+Performance Competition (60 pts),,,,,,Performance Competition (60 pts),AB,`-> Both ksl24 and dst5 were responsible for this (50/50)
