@@ -9,6 +9,9 @@
 #define NI 4096
 #define NJ 4096
 #define NK 4096
+// #define NI 1024
+// #define NJ 1024
+// #define NK 1024
 
 /* Array initialization. */
 static
@@ -97,41 +100,59 @@ void gemm_base(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, floa
 static
 void gemm_tile(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, float beta)
 {
-  int i, j, k;
+  int i, j, k, ii, jj, kk;
+  int TILE_SIZE = 32;
 
-// => Form C := alpha*A*B + beta*C,
-//A is NIxNK
-//B is NKxNJ
-//C is NIxNJ
-  for (i = 0; i < NI; i++) {
-    for (j = 0; j < NJ; j++) {
-      C[i*NJ+j] *= beta;
-    }
-    for (j = 0; j < NJ; j++) {
-      for (k = 0; k < NK; ++k) {
-	    C[i*NJ+j] += alpha * A[i*NK+k] * B[k*NJ+j];
+  for (ii = 0; ii < NI; ii += TILE_SIZE) {
+    for (jj = 0; jj < NJ; jj += TILE_SIZE) {
+      
+      for (i = ii; i < ii + TILE_SIZE && i < NI; i++) {
+        for (j = jj; j < jj + TILE_SIZE && j < NJ; j++) {
+          C[i*NJ+j] *= beta;
+        }
+      }
+      
+      for (kk = 0; kk < NK; kk += TILE_SIZE) {
+        for (i = ii; i < ii + TILE_SIZE && i < NI; i++) {
+          for (k = kk; k < kk + TILE_SIZE && k < NK; k++) {
+            for (j = jj; j < jj + TILE_SIZE && j < NJ; j++) {
+              C[i*NJ+j] += alpha * A[i*NK+k] * B[k*NJ+j];
+            }
+          }
+        }
       }
     }
   }
+
 }
 
 /* Main computational kernel: with tiling and simd optimizations. */
 static
 void gemm_tile_simd(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, float beta)
 {
-  int i, j, k;
+  int TILE_SIZE = 32;
+  int i, j, k, ii, jj, kk;
 
-// => Form C := alpha*A*B + beta*C,
-//A is NIxNK
-//B is NKxNJ
-//C is NIxNJ
-  for (i = 0; i < NI; i++) {
-    for (j = 0; j < NJ; j++) {
-      C[i*NJ+j] *= beta;
-    }
-    for (j = 0; j < NJ; j++) {
-      for (k = 0; k < NK; ++k) {
-	    C[i*NJ+j] += alpha * A[i*NK+k] * B[k*NJ+j];
+  for (ii = 0; ii < NI; ii += TILE_SIZE) {
+    for (jj = 0; jj < NJ; jj += TILE_SIZE) {   
+      for (i = ii; i < ii + TILE_SIZE && i < NI; i++) {
+        for (j = jj; j < jj + TILE_SIZE && j < NJ; j++) {
+          C[i*NJ+j] *= beta;
+        }
+      }
+      // SIMD
+      for (kk = 0; kk < NK; kk += TILE_SIZE) {
+        for (i = ii; i < ii + TILE_SIZE && i < NI; i++) {
+          for (k = kk; k < kk + TILE_SIZE && k < NK; k++) {
+            __m256 a_val = _mm256_set1_ps(alpha * A[i*NK+k]);
+            for (j = jj; j < jj + TILE_SIZE && j < NJ; j += 8) {
+              __m256 b_vals = _mm256_loadu_ps(&B[k*NJ+j]);
+              __m256 c_vals = _mm256_loadu_ps(&C[i*NJ+j]);
+              c_vals = _mm256_add_ps(_mm256_mul_ps(a_val, b_vals), c_vals);
+              _mm256_storeu_ps(&C[i*NJ+j], c_vals);
+            }
+          }
+        }
       }
     }
   }
@@ -141,41 +162,74 @@ void gemm_tile_simd(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha,
 static
 void gemm_tile_simd_par(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, float beta)
 {
-  int i, j, k;
 
-// => Form C := alpha*A*B + beta*C,
-//A is NIxNK
-//B is NKxNJ
-//C is NIxNJ
-  for (i = 0; i < NI; i++) {
-    for (j = 0; j < NJ; j++) {
-      C[i*NJ+j] *= beta;
-    }
-    for (j = 0; j < NJ; j++) {
-      for (k = 0; k < NK; ++k) {
-	    C[i*NJ+j] += alpha * A[i*NK+k] * B[k*NJ+j];
+  int TILE_SIZE = 32;
+  int i, j, k, ii, jj, kk;
+
+  #pragma omp parallel for collapse(2) private(i, j, k, ii, jj, kk) // parrallelization
+
+  for (ii = 0; ii < NI; ii += TILE_SIZE) {
+    for (jj = 0; jj < NJ; jj += TILE_SIZE) {      
+      for (i = ii; i < ii + TILE_SIZE && i < NI; i++) {
+        for (j = jj; j < jj + TILE_SIZE && j < NJ; j++) {
+          C[i*NJ+j] *= beta;
+        }
+      }
+      // SIMD
+      for (kk = 0; kk < NK; kk += TILE_SIZE) {
+        for (i = ii; i < ii + TILE_SIZE && i < NI; i++) {
+          for (k = kk; k < kk + TILE_SIZE && k < NK; k++) {
+            __m256 a_val = _mm256_set1_ps(alpha * A[i*NK+k]);
+            for (j = jj; j < jj + TILE_SIZE && j < NJ; j += 8) {
+              __m256 b_vals = _mm256_loadu_ps(&B[k*NJ+j]);
+              __m256 c_vals = _mm256_loadu_ps(&C[i*NJ+j]);
+              c_vals = _mm256_add_ps(_mm256_mul_ps(a_val, b_vals), c_vals);
+              _mm256_storeu_ps(&C[i*NJ+j], c_vals);
+            }
+          }
+        }
       }
     }
   }
+
 }
 
 /* Main computational kernel: for performance competition. */
 static
 void gemm_perf(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, float beta)
 {
-  int i, j, k;
+  const int TILE_SIZE = 64;  // Tune tile size for best performance
+  int i, j, k, ii, jj, kk;
 
-// => Form C := alpha*A*B + beta*C,
-//A is NIxNK
-//B is NKxNJ
-//C is NIxNJ
-  for (i = 0; i < NI; i++) {
-    for (j = 0; j < NJ; j++) {
-      C[i*NJ+j] *= beta;
-    }
-    for (j = 0; j < NJ; j++) {
-      for (k = 0; k < NK; ++k) {
-        C[i*NJ+j] += alpha * A[i*NK+k] * B[k*NJ+j];
+  #pragma omp parallel for collapse(2) private(i, j, k, ii, jj, kk)
+
+  for (ii = 0; ii < NI; ii += TILE_SIZE) {
+    for (jj = 0; jj < NJ; jj += TILE_SIZE) {
+      for (i = ii; i < ii + TILE_SIZE && i < NI; i++) {
+        for (j = jj; j < jj + TILE_SIZE && j < NJ; j++) {
+          C[i*NJ+j] *= beta;
+        }
+      }
+
+      // SIMD
+      for (kk = 0; kk < NK; kk += TILE_SIZE) {
+        for (i = ii; i < ii + TILE_SIZE && i < NI; i++) {
+          for (k = kk; k < kk + TILE_SIZE && k < NK; k++) {
+            __m256 a_val = _mm256_set1_ps(alpha * A[i*NK+k]);
+            for (j = jj; j < jj + TILE_SIZE && j < NJ; j += 16) {
+              // Loop rolling
+              // From notes: _mm256_load is sometimes faster than _mm256_loadu (not in this case it seems)
+              __m256 b_vals1 = _mm256_loadu_ps(&B[k*NJ+j]);
+              __m256 b_vals2 = _mm256_loadu_ps(&B[k*NJ+j+8]);
+              __m256 c_vals1 = _mm256_loadu_ps(&C[i*NJ+j]);
+              __m256 c_vals2 = _mm256_loadu_ps(&C[i*NJ+j+8]);
+              c_vals1 = _mm256_add_ps(_mm256_mul_ps(a_val, b_vals1), c_vals1);
+              c_vals2 = _mm256_add_ps(_mm256_mul_ps(a_val, b_vals2), c_vals2);
+              _mm256_storeu_ps(&C[i*NJ+j], c_vals1);
+              _mm256_storeu_ps(&C[i*NJ+j+8], c_vals2);
+            }
+          }
+        }
       }
     }
   }
