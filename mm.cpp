@@ -162,8 +162,8 @@ void gemm_tile_simd(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha,
 static
 void gemm_tile_simd_par(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, float beta)
 {
-
   int TILE_SIZE = 32;
+
   int i, j, k, ii, jj, kk;
 
   #pragma omp parallel for collapse(2) private(i, j, k, ii, jj, kk) // parrallelization
@@ -191,42 +191,48 @@ void gemm_tile_simd_par(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float al
       }
     }
   }
-
 }
 
-/* Main computational kernel: for performance competition. */
-static
+
 void gemm_perf(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, float beta)
 {
-  const int TILE_SIZE = 64;  // Tune tile size for best performance
+  const int TILE_SIZE = 64;
+  const int TILE_SIZE_I = 64;
+  const int TILE_SIZE_J = 512;
+  const int TILE_SIZE_K = 64;
+
   int i, j, k, ii, jj, kk;
 
-  #pragma omp parallel for collapse(2) private(i, j, k, ii, jj, kk)
+  #pragma omp parallel for num_threads(20) collapse(2) private(i, j, k, ii, jj, kk)
 
-  for (ii = 0; ii < NI; ii += TILE_SIZE) {
-    for (jj = 0; jj < NJ; jj += TILE_SIZE) {
-      for (i = ii; i < ii + TILE_SIZE && i < NI; i++) {
-        for (j = jj; j < jj + TILE_SIZE && j < NJ; j++) {
+  for (ii = 0; ii < NI; ii += TILE_SIZE_I) {
+    for (jj = 0; jj < NJ; jj += TILE_SIZE_J) {
+      for (i = ii; i < ii + TILE_SIZE_I && i < NI; i++) {
+        for (j = jj; j < jj + TILE_SIZE_J && j < NJ; j++) {
           C[i*NJ+j] *= beta;
         }
       }
-
-      // SIMD
-      for (kk = 0; kk < NK; kk += TILE_SIZE) {
-        for (i = ii; i < ii + TILE_SIZE && i < NI; i++) {
-          for (k = kk; k < kk + TILE_SIZE && k < NK; k++) {
+      for (kk = 0; kk < NK; kk += TILE_SIZE_K) {
+        for (i = ii; i < ii + TILE_SIZE_I && i < NI; i++) {
+          for (k = kk; k < kk + TILE_SIZE_K && k < NK; k++) {
             __m256 a_val = _mm256_set1_ps(alpha * A[i*NK+k]);
-            for (j = jj; j < jj + TILE_SIZE && j < NJ; j += 16) {
-              // Loop rolling
-              // From notes: _mm256_load is sometimes faster than _mm256_loadu (not in this case it seems)
+            for (j = jj; j < jj + TILE_SIZE_J && j < NJ; j += 32) {
               __m256 b_vals1 = _mm256_loadu_ps(&B[k*NJ+j]);
               __m256 b_vals2 = _mm256_loadu_ps(&B[k*NJ+j+8]);
+              __m256 b_vals3 = _mm256_loadu_ps(&B[k*NJ+j+16]);
+              __m256 b_vals4 = _mm256_loadu_ps(&B[k*NJ+j+24]);
               __m256 c_vals1 = _mm256_loadu_ps(&C[i*NJ+j]);
               __m256 c_vals2 = _mm256_loadu_ps(&C[i*NJ+j+8]);
+              __m256 c_vals3 = _mm256_loadu_ps(&C[i*NJ+j+16]);
+              __m256 c_vals4 = _mm256_loadu_ps(&C[i*NJ+j+24]);
               c_vals1 = _mm256_add_ps(_mm256_mul_ps(a_val, b_vals1), c_vals1);
               c_vals2 = _mm256_add_ps(_mm256_mul_ps(a_val, b_vals2), c_vals2);
+              c_vals3 = _mm256_add_ps(_mm256_mul_ps(a_val, b_vals3), c_vals3);
+              c_vals4 = _mm256_add_ps(_mm256_mul_ps(a_val, b_vals4), c_vals4);
               _mm256_storeu_ps(&C[i*NJ+j], c_vals1);
               _mm256_storeu_ps(&C[i*NJ+j+8], c_vals2);
+              _mm256_storeu_ps(&C[i*NJ+j+16], c_vals3);
+              _mm256_storeu_ps(&C[i*NJ+j+24], c_vals4);
             }
           }
         }
@@ -234,6 +240,9 @@ void gemm_perf(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, floa
     }
   }
 }
+
+
+
 
 int main(int argc, char** argv)
 {
