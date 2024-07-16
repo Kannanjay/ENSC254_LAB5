@@ -101,7 +101,7 @@ static
 void gemm_tile(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, float beta)
 {
   int i, j, k, ii, jj, kk;
-  int TILE_SIZE = 32;
+  int TILE_SIZE = 128;
 
   for (ii = 0; ii < NI; ii += TILE_SIZE) {
     for (jj = 0; jj < NJ; jj += TILE_SIZE) {
@@ -130,7 +130,7 @@ void gemm_tile(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, floa
 static
 void gemm_tile_simd(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, float beta)
 {
-  int TILE_SIZE = 32;
+  int TILE_SIZE = 128;
   int i, j, k, ii, jj, kk;
 
   for (ii = 0; ii < NI; ii += TILE_SIZE) {
@@ -162,11 +162,11 @@ void gemm_tile_simd(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha,
 static
 void gemm_tile_simd_par(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, float beta)
 {
-  int TILE_SIZE = 32;
+  int TILE_SIZE = 128;
 
   int i, j, k, ii, jj, kk;
 
-  #pragma omp parallel for collapse(2) private(i, j, k, ii, jj, kk) // parrallelization
+  #pragma omp parallel for num_threads(20) collapse(2) private(i, j, k, ii, jj, kk) // parrallelization
 
   for (ii = 0; ii < NI; ii += TILE_SIZE) {
     for (jj = 0; jj < NJ; jj += TILE_SIZE) {      
